@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spiritual Journey — Job Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --paper:#EDE8DE;
+    --ticket:#FBF8F1;
+    --ink:#2B2A28;
+    --ink-soft:#6B6A63;
+    --line:#D8D2C2;
+    --orange:#E8590C;
+    --orange-dark:#A3400A;
+    --slate:#3E5C76;
+    --slate-dark:#243547;
+    --green:#3F7A54;
+    --green-bg:#E4F0E6;
+    --red:#B23A2F;
+    --red-bg:#F6E4E1;
+    --amber:#B5790C;
+    --amber-bg:#F7EBD3;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);font-family:'Inter',sans-serif;color:var(--ink);}
+  .wrap{max-width:1400px;margin:0 auto;padding:28px 24px 60px;}
+
+  .head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--ink);padding-bottom:16px;margin-bottom:24px;flex-wrap:wrap;gap:16px;}
+  .head h1{font-family:'Oswald',sans-serif;font-weight:700;font-size:34px;letter-spacing:0.5px;margin:0;text-transform:uppercase;}
+  .head .sub{font-size:13px;color:var(--ink-soft);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+  .addbtn{background:var(--orange);color:#fff;border:none;font-family:'Oswald',sans-serif;font-weight:600;font-size:15px;letter-spacing:0.5px;text-transform:uppercase;padding:12px 22px;cursor:pointer;border-radius:2px;}
+  .addbtn:hover{background:var(--orange-dark);}
+  .addbtn:disabled{opacity:0.5;cursor:not-allowed;}
+
+  .status-bar{font-size:12px;color:var(--ink-soft);margin-bottom:16px;font-family:'JetBrains Mono',monospace;}
+  .status-bar.error{color:var(--red);}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:28px;}
+  .stat{background:var(--ticket);border:1px solid var(--line);border-left:4px solid var(--slate);padding:14px 16px;}
+  .stat .label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-soft);font-weight:600;}
+  .stat .val{font-family:'Oswald',sans-serif;font-size:26px;font-weight:600;margin-top:4px;}
+  .stat.warn{border-left-color:var(--red);}
+
+  .board{display:flex;gap:16px;overflow-x:auto;padding-bottom:16px;}
+  .col{flex:0 0 240px;background:rgba(0,0,0,0.03);border-radius:4px;padding:10px;min-height:120px;}
+  .col-head{display:flex;justify-content:space-between;align-items:baseline;padding:6px 4px 10px;border-bottom:2px solid var(--ink);margin-bottom:10px;}
+  .col-head .name{font-family:'Oswald',sans-serif;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;}
+  .col-head .count{font-size:12px;color:var(--ink-soft);font-weight:500;}
+  .col-total{font-size:11px;color:var(--ink-soft);margin:-6px 0 10px 4px;font-family:'JetBrains Mono',monospace;}
+
+  .ticket{background:var(--ticket);border:1px solid var(--line);border-radius:3px;padding:12px 12px 10px;margin-bottom:10px;cursor:pointer;position:relative;box-shadow:0 1px 2px rgba(0,0,0,0.06);}
+  .ticket:hover{border-color:var(--ink-soft);}
+  .ticket::before{content:'';position:absolute;top:-5px;left:12px;width:10px;height:10px;border-radius:50%;background:var(--paper);border:1px solid var(--line);}
+  .ticket-num{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--orange-dark);letter-spacing:0.5px;font-weight:500;}
+  .ticket-client{font-family:'Oswald',sans-serif;font-weight:600;font-size:15px;margin:4px 0 2px;}
+  .ticket-addr{font-size:11px;color:var(--ink-soft);margin-bottom:8px;line-height:1.4;}
+  .ticket-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;}
+  .badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600;}
+  .badge-type{background:var(--slate-dark);color:#fff;}
+  .val-money{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;}
+  .paid-tag{font-size:10px;padding:2px 6px;border-radius:2px;font-weight:600;text-transform:uppercase;}
+  .paid-unpaid{background:var(--red-bg);color:var(--red);}
+  .paid-partial{background:var(--amber-bg);color:var(--amber);}
+  .paid-paid{background:var(--green-bg);color:var(--green);}
+  .empty-col{font-size:11px;color:var(--ink-soft);text-align:center;padding:20px 4px;font-style:italic;}
+
+  .overlay{position:fixed;inset:0;background:rgba(20,18,14,0.55);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:50;}
+  .overlay.open{display:flex;}
+  .modal{background:var(--paper);border:2px solid var(--ink);max-width:480px;width:100%;padding:24px;position:relative;}
+  .modal h2{font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:20px;margin:0 0 16px;border-bottom:2px solid var(--ink);padding-bottom:10px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;}
+  .field input,.field select,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--line);background:var(--ticket);font-family:'Inter',sans-serif;font-size:13px;color:var(--ink);border-radius:2px;}
+  .field textarea{resize:vertical;min-height:50px;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .modal-actions{display:flex;justify-content:space-between;margin-top:20px;gap:10px;}
+  .btn{font-family:'Oswald',sans-serif;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;padding:10px 18px;border:none;cursor:pointer;border-radius:2px;}
+  .btn-primary{background:var(--orange);color:#fff;flex:1;}
+  .btn-primary:hover{background:var(--orange-dark);}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-ghost{background:transparent;border:1px solid var(--ink-soft);color:var(--ink);}
+  .btn-ghost:hover{background:rgba(0,0,0,0.05);}
+  .btn-danger{background:transparent;border:1px solid var(--red);color:var(--red);}
+  .btn-danger:hover{background:var(--red-bg);}
+  .close-x{position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-soft);line-height:1;}
+  .config-warning{background:var(--red-bg);border:1px solid var(--red);color:var(--red);padding:16px;margin-bottom:20px;font-size:13px;line-height:1.5;}
+  .config-warning code{background:rgba(0,0,0,0.06);padding:1px 5px;border-radius:2px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>Spiritual Journey</h1>
+      <div class="sub">Roofing &amp; construction — job tracker</div>
+    </div>
+    <button class="addbtn" id="newJobBtn">+ New job</button>
+  </div>
+
+  <div id="configWarning" class="config-warning" style="display:none;">
+    Supabase isn't configured yet. Open <code>index.html</code> and set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the script to your project's values (Supabase dashboard → Project Settings → API).
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <div class="stats" id="stats"></div>
+  <div class="board" id="board"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <button class="close-x" id="closeModal">&times;</button>
+    <h2 id="modalTitle">New job</h2>
+    <div class="field">
+      <label>Client name</label>
+      <input type="text" id="f_client" placeholder="Jordan Miller">
+    </div>
+    <div class="field">
+      <label>Address</label>
+      <input type="text" id="f_addr" placeholder="412 Maple St, Des Moines, IA">
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Job type</label>
+        <select id="f_type">
+          <option>Repair</option>
+          <option>Replacement</option>
+          <option>New install</option>
+          <option>Inspection</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Stage</label>
+        <select id="f_stage">
+          <option value="lead">Lead</option>
+          <option value="estimate">Estimate sent</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="inprogress">In progress</option>
+          <option value="invoiced">Invoiced</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Estimate value ($)</label>
+        <input type="number" id="f_value" placeholder="8500">
+      </div>
+      <div class="field">
+        <label>Scheduled date</label>
+        <input type="date" id="f_date">
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Materials cost ($)</label>
+        <input type="number" id="f_materials" placeholder="2200">
+      </div>
+      <div class="field">
+        <label>Labor cost ($)</label>
+        <input type="number" id="f_labor" placeholder="1800">
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Amount paid ($)</label>
+        <input type="number" id="f_paid" placeholder="0">
+      </div>
+      <div class="field">
+        <label>Phone</label>
+        <input type="text" id="f_phone" placeholder="(515) 555-0100">
+      </div>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="f_notes" placeholder="Roof pitch, access notes, shingle color, etc."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="deleteBtn" style="display:none;">Delete job</button>
+      <div style="display:flex;gap:10px;margin-left:auto;">
+        <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveBtn">Save job</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- Supabase config ----
+// Get these from your Supabase project: Project Settings > API
+const SUPABASE_URL = 'https://bpxcbmlauxlekfxgnofp.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_BS8o3WsBoRFHL0NolWNf2g_Lwh8NQ_C';
+
+const configured = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+const sb = configured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+const STAGES = [
+  {key:'lead', name:'Lead'},
+  {key:'estimate', name:'Estimate sent'},
+  {key:'scheduled', name:'Scheduled'},
+  {key:'inprogress', name:'In progress'},
+  {key:'invoiced', name:'Invoiced'},
+  {key:'paid', name:'Paid'}
+];
+
+let jobs = [];
+let editingId = null;
+
+function fmtMoney(n){
+  n = Number(n)||0;
+  return '$' + n.toLocaleString('en-US', {maximumFractionDigits:0});
+}
+
+function ticketNo(n){
+  return 'SJ-' + String(n).padStart(4,'0');
+}
+
+function setStatus(msg, isError){
+  const bar = document.getElementById('statusBar');
+  bar.textContent = msg;
+  bar.classList.toggle('error', !!isError);
+}
+
+// DB row <-> app job mapping (DB uses job_date, app uses date, to avoid SQL keyword friction)
+function fromRow(row){
+  return {
+    id: row.id,
+    num: row.num,
+    client: row.client,
+    addr: row.addr,
+    type: row.type,
+    stage: row.stage,
+    value: row.value,
+    date: row.job_date,
+    materials: row.materials,
+    labor: row.labor,
+    paid: row.paid,
+    phone: row.phone,
+    notes: row.notes
+  };
+}
+
+function toRow(job){
+  return {
+    num: job.num,
+    client: job.client,
+    addr: job.addr,
+    type: job.type,
+    stage: job.stage,
+    value: job.value === '' ? 0 : Number(job.value),
+    job_date: job.date || null,
+    materials: job.materials === '' ? 0 : Number(job.materials),
+    labor: job.labor === '' ? 0 : Number(job.labor),
+    paid: job.paid === '' ? 0 : Number(job.paid),
+    phone: job.phone,
+    notes: job.notes
+  };
+}
+
+async function loadJobs(){
+  if(!configured){
+    document.getElementById('configWarning').style.display = 'block';
+    document.getElementById('newJobBtn').disabled = true;
+    render();
+    return;
+  }
+  setStatus('Loading jobs…');
+  const {data, error} = await sb.from('jobs').select('*').order('num', {ascending:true});
+  if(error){
+    setStatus('Could not load jobs: ' + error.message, true);
+    jobs = [];
+  } else {
+    jobs = data.map(fromRow);
+    setStatus('Synced with Supabase');
+  }
+  render();
+}
+
+function nextTicketNum(){
+  if(!jobs.length) return 1;
+  return Math.max(...jobs.map(j => j.num || 0)) + 1;
+}
+
+function paidStatus(job){
+  const paid = Number(job.paid)||0;
+  const val = Number(job.value)||0;
+  if(job.stage !== 'invoiced' && job.stage !== 'paid') return null;
+  if(paid <= 0) return {cls:'paid-unpaid', label:'Unpaid'};
+  if(paid < val) return {cls:'paid-partial', label:'Partial'};
+  return {cls:'paid-paid', label:'Paid'};
+}
+
+function render(){
+  renderStats();
+  renderBoard();
+}
+
+function renderStats(){
+  const active = jobs.filter(j => j.stage !== 'paid').length;
+  const pipelineValue = jobs.filter(j => j.stage !== 'paid').reduce((s,j)=>s+(Number(j.value)||0),0);
+  const outstanding = jobs.filter(j => j.stage==='invoiced').reduce((s,j)=>s + Math.max((Number(j.value)||0)-(Number(j.paid)||0),0), 0);
+  const thisWeek = (() => {
+    const now = new Date();
+    const in7 = new Date(now.getTime() + 7*24*60*60*1000);
+    return jobs.filter(j => j.date && new Date(j.date) >= now && new Date(j.date) <= in7 && j.stage==='scheduled').length;
+  })();
+
+  const stats = [
+    {label:'Active jobs', val: active},
+    {label:'Pipeline value', val: fmtMoney(pipelineValue)},
+    {label:'Scheduled this week', val: thisWeek},
+    {label:'Outstanding balance', val: fmtMoney(outstanding), warn: outstanding > 0}
+  ];
+
+  document.getElementById('stats').innerHTML = stats.map(s => `
+    <div class="stat${s.warn ? ' warn' : ''}">
+      <div class="label">${s.label}</div>
+      <div class="val">${s.val}</div>
+    </div>
+  `).join('');
+}
+
+function renderBoard(){
+  const board = document.getElementById('board');
+  board.innerHTML = STAGES.map(stage => {
+    const colJobs = jobs.filter(j => j.stage === stage.key);
+    const total = colJobs.reduce((s,j)=>s+(Number(j.value)||0),0);
+    const cards = colJobs.length ? colJobs.map(j => cardHtml(j)).join('') : '<div class="empty-col">No jobs</div>';
+    return `
+      <div class="col">
+        <div class="col-head">
+          <span class="name">${stage.name}</span>
+          <span class="count">${colJobs.length}</span>
+        </div>
+        <div class="col-total">${fmtMoney(total)}</div>
+        ${cards}
+      </div>
+    `;
+  }).join('');
+
+  board.querySelectorAll('.ticket').forEach(el => {
+    el.addEventListener('click', () => openModal(el.dataset.id));
+  });
+}
+
+function cardHtml(job){
+  const ps = paidStatus(job);
+  const dateStr = job.date ? new Date(job.date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+  return `
+    <div class="ticket" data-id="${job.id}">
+      <div class="ticket-num">${ticketNo(job.num)}</div>
+      <div class="ticket-client">${escapeHtml(job.client || 'Unnamed client')}</div>
+      <div class="ticket-addr">${escapeHtml(job.addr || '')}</div>
+      <div class="ticket-row">
+        <span class="badge badge-type">${job.type}</span>
+        <span class="val-money">${fmtMoney(job.value)}</span>
+      </div>
+      <div class="ticket-row" style="margin-top:8px;">
+        <span style="color:var(--ink-soft);">${dateStr}</span>
+        ${ps ? `<span class="paid-tag ${ps.cls}">${ps.label}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function openModal(id){
+  editingId = id || null;
+  const job = id ? jobs.find(j => j.id === id) : null;
+  document.getElementById('modalTitle').textContent = job ? ticketNo(job.num) + ' — edit job' : 'New job';
+  document.getElementById('f_client').value = job ? job.client || '' : '';
+  document.getElementById('f_addr').value = job ? job.addr || '' : '';
+  document.getElementById('f_type').value = job ? job.type : 'Repair';
+  document.getElementById('f_stage').value = job ? job.stage : 'lead';
+  document.getElementById('f_value').value = job ? job.value : '';
+  document.getElementById('f_date').value = job ? job.date || '' : '';
+  document.getElementById('f_materials').value = job ? job.materials : '';
+  document.getElementById('f_labor').value = job ? job.labor : '';
+  document.getElementById('f_paid').value = job ? job.paid : '';
+  document.getElementById('f_phone').value = job ? job.phone || '' : '';
+  document.getElementById('f_notes').value = job ? job.notes || '' : '';
+  document.getElementById('deleteBtn').style.display = job ? 'inline-block' : 'none';
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('overlay').classList.remove('open');
+  editingId = null;
+}
+
+async function saveJob(){
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  setStatus('Saving…');
+
+  const formJob = {
+    client: document.getElementById('f_client').value.trim(),
+    addr: document.getElementById('f_addr').value.trim(),
+    type: document.getElementById('f_type').value,
+    stage: document.getElementById('f_stage').value,
+    value: document.getElementById('f_value').value,
+    date: document.getElementById('f_date').value,
+    materials: document.getElementById('f_materials').value,
+    labor: document.getElementById('f_labor').value,
+    paid: document.getElementById('f_paid').value,
+    phone: document.getElementById('f_phone').value.trim(),
+    notes: document.getElementById('f_notes').value.trim()
+  };
+
+  let error;
+  if(editingId){
+    ({error} = await sb.from('jobs').update(toRow(formJob)).eq('id', editingId));
+  } else {
+    formJob.num = nextTicketNum();
+    ({error} = await sb.from('jobs').insert(toRow(formJob)));
+  }
+
+  saveBtn.disabled = false;
+  if(error){
+    setStatus('Save failed: ' + error.message, true);
+    return;
+  }
+  closeModal();
+  await loadJobs();
+}
+
+async function deleteJob(){
+  if(!editingId) return;
+  setStatus('Deleting…');
+  const {error} = await sb.from('jobs').delete().eq('id', editingId);
+  if(error){
+    setStatus('Delete failed: ' + error.message, true);
+    return;
+  }
+  closeModal();
+  await loadJobs();
+}
+
+document.getElementById('newJobBtn').addEventListener('click', () => openModal(null));
+document.getElementById('closeModal').addEventListener('click', closeModal);
+document.getElementById('cancelBtn').addEventListener('click', closeModal);
+document.getElementById('saveBtn').addEventListener('click', saveJob);
+document.getElementById('deleteBtn').addEventListener('click', deleteJob);
+document.getElementById('overlay').addEventListener('click', (e) => { if(e.target.id === 'overlay') closeModal(); });
+
+loadJobs();
+</script>
+</body>
+</html>
