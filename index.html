@@ -89,6 +89,19 @@
   .close-x{position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-soft);line-height:1;}
   .config-warning{background:var(--red-bg);border:1px solid var(--red);color:var(--red);padding:16px;margin-bottom:20px;font-size:13px;line-height:1.5;}
   .config-warning code{background:rgba(0,0,0,0.06);padding:1px 5px;border-radius:2px;}
+
+  .photo-drop{border:1.5px dashed var(--line);border-radius:3px;padding:14px;text-align:center;cursor:pointer;background:var(--ticket);}
+  .photo-drop:hover{border-color:var(--ink-soft);}
+  .photo-drop input{display:none;}
+  .photo-drop .hint{font-size:11px;color:var(--ink-soft);}
+  .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px;margin-top:10px;}
+  .photo-thumb{position:relative;aspect-ratio:1;border-radius:3px;overflow:hidden;border:1px solid var(--line);background:#00000010;}
+  .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .photo-thumb .rm{position:absolute;top:2px;right:2px;background:rgba(20,18,14,0.7);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:12px;line-height:1;cursor:pointer;}
+  .photo-thumb .uploading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,18,14,0.4);color:#fff;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;}
+  .ticket-photocount{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--ink-soft);}
+  .card-thumbstrip{display:flex;gap:4px;margin-top:8px;}
+  .card-thumbstrip img{width:32px;height:32px;object-fit:cover;border-radius:2px;border:1px solid var(--line);}
 </style>
 </head>
 <body>
@@ -179,6 +192,15 @@
       <label>Notes</label>
       <textarea id="f_notes" placeholder="Roof pitch, access notes, shingle color, etc."></textarea>
     </div>
+    <div class="field">
+      <label>Photos</label>
+      <label class="photo-drop" id="photoDrop">
+        <div>+ Add photos</div>
+        <div class="hint">Roof damage, access shots, before/after</div>
+        <input type="file" id="f_photos" accept="image/*" multiple capture="environment">
+      </label>
+      <div class="photo-grid" id="photoGrid"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="deleteBtn" style="display:none;">Delete job</button>
       <div style="display:flex;gap:10px;margin-left:auto;">
@@ -209,6 +231,9 @@ const STAGES = [
 
 let jobs = [];
 let editingId = null;
+const PHOTO_BUCKET = 'job-photos';
+let existingPhotos = [];   // URLs already saved to this job
+let pendingFiles = [];     // File objects picked but not yet uploaded
 
 function fmtMoney(n){
   n = Number(n)||0;
@@ -240,7 +265,8 @@ function fromRow(row){
     labor: row.labor,
     paid: row.paid,
     phone: row.phone,
-    notes: row.notes
+    notes: row.notes,
+    photos: row.photos || []
   };
 }
 
@@ -257,7 +283,8 @@ function toRow(job){
     labor: job.labor === '' ? 0 : Number(job.labor),
     paid: job.paid === '' ? 0 : Number(job.paid),
     phone: job.phone,
-    notes: job.notes
+    notes: job.notes,
+    photos: job.photos || []
   };
 }
 
@@ -363,6 +390,11 @@ function cardHtml(job){
         <span style="color:var(--ink-soft);">${dateStr}</span>
         ${ps ? `<span class="paid-tag ${ps.cls}">${ps.label}</span>` : ''}
       </div>
+      ${(job.photos && job.photos.length) ? `
+        <div class="card-thumbstrip">
+          ${job.photos.slice(0,4).map(u => `<img src="${u}" loading="lazy">`).join('')}
+          ${job.photos.length > 4 ? `<span class="ticket-photocount">+${job.photos.length-4}</span>` : ''}
+        </div>` : ''}
     </div>
   `;
 }
@@ -387,12 +419,55 @@ function openModal(id){
   document.getElementById('f_phone').value = job ? job.phone || '' : '';
   document.getElementById('f_notes').value = job ? job.notes || '' : '';
   document.getElementById('deleteBtn').style.display = job ? 'inline-block' : 'none';
+  existingPhotos = job ? (job.photos || []).slice() : [];
+  pendingFiles = [];
+  document.getElementById('f_photos').value = '';
+  renderPhotoGrid();
   document.getElementById('overlay').classList.add('open');
+}
+
+function renderPhotoGrid(){
+  const grid = document.getElementById('photoGrid');
+  const existingHtml = existingPhotos.map((url, i) => `
+    <div class="photo-thumb" data-kind="existing" data-idx="${i}">
+      <img src="${url}">
+      <button type="button" class="rm" data-kind="existing" data-idx="${i}">&times;</button>
+    </div>
+  `).join('');
+  const pendingHtml = pendingFiles.map((file, i) => `
+    <div class="photo-thumb" data-kind="pending" data-idx="${i}">
+      <img src="${URL.createObjectURL(file)}">
+      <button type="button" class="rm" data-kind="pending" data-idx="${i}">&times;</button>
+    </div>
+  `).join('');
+  grid.innerHTML = existingHtml + pendingHtml;
+  grid.querySelectorAll('.rm').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      if(btn.dataset.kind === 'existing') existingPhotos.splice(idx,1);
+      else pendingFiles.splice(idx,1);
+      renderPhotoGrid();
+    });
+  });
+}
+
+async function uploadPendingPhotos(jobNum){
+  const urls = [];
+  for(const file of pendingFiles){
+    const path = `${jobNum}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+    const {error} = await sb.storage.from(PHOTO_BUCKET).upload(path, file, {upsert:false});
+    if(error){ throw new Error('Photo upload failed: ' + error.message); }
+    const {data} = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+    urls.push(data.publicUrl);
+  }
+  return urls;
 }
 
 function closeModal(){
   document.getElementById('overlay').classList.remove('open');
   editingId = null;
+  existingPhotos = [];
+  pendingFiles = [];
 }
 
 async function saveJob(){
@@ -414,11 +489,27 @@ async function saveJob(){
     notes: document.getElementById('f_notes').value.trim()
   };
 
+  const jobNum = editingId ? (jobs.find(j => j.id === editingId) || {}).num : nextTicketNum();
+
+  let newUrls = [];
+  if(pendingFiles.length){
+    setStatus('Uploading photos…');
+    try{
+      newUrls = await uploadPendingPhotos(jobNum);
+    }catch(err){
+      saveBtn.disabled = false;
+      setStatus(err.message, true);
+      return;
+    }
+  }
+  formJob.photos = existingPhotos.concat(newUrls);
+
+  setStatus('Saving…');
   let error;
   if(editingId){
     ({error} = await sb.from('jobs').update(toRow(formJob)).eq('id', editingId));
   } else {
-    formJob.num = nextTicketNum();
+    formJob.num = jobNum;
     ({error} = await sb.from('jobs').insert(toRow(formJob)));
   }
 
@@ -448,6 +539,11 @@ document.getElementById('closeModal').addEventListener('click', closeModal);
 document.getElementById('cancelBtn').addEventListener('click', closeModal);
 document.getElementById('saveBtn').addEventListener('click', saveJob);
 document.getElementById('deleteBtn').addEventListener('click', deleteJob);
+document.getElementById('f_photos').addEventListener('change', (e) => {
+  pendingFiles = pendingFiles.concat(Array.from(e.target.files));
+  e.target.value = '';
+  renderPhotoGrid();
+});
 document.getElementById('overlay').addEventListener('click', (e) => { if(e.target.id === 'overlay') closeModal(); });
 
 loadJobs();
