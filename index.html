@@ -102,6 +102,15 @@
   .ticket-photocount{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--ink-soft);}
   .card-thumbstrip{display:flex;gap:4px;margin-top:8px;}
   .card-thumbstrip img{width:32px;height:32px;object-fit:cover;border-radius:2px;border:1px solid var(--line);}
+
+  .notes-log{max-height:160px;overflow-y:auto;border:1px solid var(--line);border-radius:2px;background:var(--ticket);}
+  .notes-log:empty{display:none;}
+  .note-entry{padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;line-height:1.4;}
+  .note-entry:last-child{border-bottom:none;}
+  .note-ts{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-soft);margin-bottom:2px;}
+  .note-add-row{display:flex;gap:8px;margin-top:8px;}
+  .note-add-row input{flex:1;}
+  .note-add-row .btn{padding:8px 14px;}
 </style>
 </head>
 <body>
@@ -170,6 +179,16 @@
         <input type="date" id="f_date">
       </div>
     </div>
+    <div class="two-col" id="hourlyRow" style="display:none;">
+      <div class="field">
+        <label>Hourly rate ($)</label>
+        <input type="number" id="f_hourly" placeholder="65">
+      </div>
+      <div class="field">
+        <label>Estimated hours</label>
+        <input type="number" id="f_hours" placeholder="4">
+      </div>
+    </div>
     <div class="two-col">
       <div class="field">
         <label>Materials cost ($)</label>
@@ -192,7 +211,11 @@
     </div>
     <div class="field">
       <label>Notes</label>
-      <textarea id="f_notes" placeholder="Roof pitch, access notes, shingle color, etc."></textarea>
+      <div class="notes-log" id="notesLog"></div>
+      <div class="note-add-row">
+        <input type="text" id="f_note_new" placeholder="Add a note…">
+        <button type="button" class="btn btn-ghost" id="addNoteBtn">Add</button>
+      </div>
     </div>
     <div class="field">
       <label>Photos</label>
@@ -236,6 +259,7 @@ let editingId = null;
 const PHOTO_BUCKET = 'job-photos';
 let existingPhotos = [];   // URLs already saved to this job
 let pendingFiles = [];     // File objects picked but not yet uploaded
+let notesLog = [];         // {text, ts} entries, newest first
 
 function fmtMoney(n){
   n = Number(n)||0;
@@ -268,7 +292,10 @@ function fromRow(row){
     paid: row.paid,
     phone: row.phone,
     notes: row.notes,
-    photos: row.photos || []
+    photos: row.photos || [],
+    hourly: row.hourly_rate,
+    hours: row.hours_est,
+    notes_log: row.notes_log || []
   };
 }
 
@@ -286,7 +313,10 @@ function toRow(job){
     paid: job.paid === '' ? 0 : Number(job.paid),
     phone: job.phone,
     notes: job.notes,
-    photos: job.photos || []
+    photos: job.photos || [],
+    hourly_rate: job.hourly === '' || job.hourly == null ? 0 : Number(job.hourly),
+    hours_est: job.hours === '' || job.hours == null ? 0 : Number(job.hours),
+    notes_log: job.notes_log || []
   };
 }
 
@@ -386,7 +416,7 @@ function cardHtml(job){
       <div class="ticket-addr">${escapeHtml(job.addr || '')}</div>
       <div class="ticket-row">
         <span class="badge badge-type">${job.type}</span>
-        <span class="val-money">${fmtMoney(job.value)}</span>
+        <span class="val-money">${(job.type === 'Snow Removal' && job.hourly) ? fmtMoney(job.hourly) + '/hr' : fmtMoney(job.value)}</span>
       </div>
       <div class="ticket-row" style="margin-top:8px;">
         <span style="color:var(--ink-soft);">${dateStr}</span>
@@ -419,13 +449,39 @@ function openModal(id){
   document.getElementById('f_labor').value = job ? job.labor : '';
   document.getElementById('f_paid').value = job ? job.paid : '';
   document.getElementById('f_phone').value = job ? job.phone || '' : '';
-  document.getElementById('f_notes').value = job ? job.notes || '' : '';
+  document.getElementById('f_hourly').value = job ? (job.hourly || '') : '';
+  document.getElementById('f_hours').value = job ? (job.hours || '') : '';
   document.getElementById('deleteBtn').style.display = job ? 'inline-block' : 'none';
   existingPhotos = job ? (job.photos || []).slice() : [];
   pendingFiles = [];
+  notesLog = job ? (job.notes_log || []).slice() : [];
+  document.getElementById('f_note_new').value = '';
   document.getElementById('f_photos').value = '';
   renderPhotoGrid();
+  renderNotesLog();
+  updateHourlyVisibility();
   document.getElementById('overlay').classList.add('open');
+}
+
+function updateHourlyVisibility(){
+  const show = document.getElementById('f_type').value === 'Snow Removal';
+  document.getElementById('hourlyRow').style.display = show ? 'grid' : 'none';
+}
+
+function fmtTs(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' · ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+
+function renderNotesLog(){
+  const el = document.getElementById('notesLog');
+  const sorted = notesLog.slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  el.innerHTML = sorted.map(n => `
+    <div class="note-entry">
+      <div class="note-ts">${fmtTs(n.ts)}</div>
+      <div>${escapeHtml(n.text)}</div>
+    </div>
+  `).join('');
 }
 
 function renderPhotoGrid(){
@@ -470,6 +526,7 @@ function closeModal(){
   editingId = null;
   existingPhotos = [];
   pendingFiles = [];
+  notesLog = [];
 }
 
 async function saveJob(){
@@ -488,7 +545,9 @@ async function saveJob(){
     labor: document.getElementById('f_labor').value,
     paid: document.getElementById('f_paid').value,
     phone: document.getElementById('f_phone').value.trim(),
-    notes: document.getElementById('f_notes').value.trim()
+    hourly: document.getElementById('f_hourly').value,
+    hours: document.getElementById('f_hours').value,
+    notes_log: notesLog
   };
 
   const jobNum = editingId ? (jobs.find(j => j.id === editingId) || {}).num : nextTicketNum();
@@ -541,6 +600,18 @@ document.getElementById('closeModal').addEventListener('click', closeModal);
 document.getElementById('cancelBtn').addEventListener('click', closeModal);
 document.getElementById('saveBtn').addEventListener('click', saveJob);
 document.getElementById('deleteBtn').addEventListener('click', deleteJob);
+document.getElementById('f_type').addEventListener('change', updateHourlyVisibility);
+document.getElementById('addNoteBtn').addEventListener('click', () => {
+  const input = document.getElementById('f_note_new');
+  const text = input.value.trim();
+  if(!text) return;
+  notesLog.push({text, ts: new Date().toISOString()});
+  input.value = '';
+  renderNotesLog();
+});
+document.getElementById('f_note_new').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('addNoteBtn').click(); }
+});
 document.getElementById('f_photos').addEventListener('change', (e) => {
   pendingFiles = pendingFiles.concat(Array.from(e.target.files));
   e.target.value = '';
