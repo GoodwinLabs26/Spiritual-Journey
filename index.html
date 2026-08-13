@@ -111,6 +111,26 @@
   .note-add-row{display:flex;gap:8px;margin-top:8px;}
   .note-add-row input{flex:1;}
   .note-add-row .btn{padding:8px 14px;}
+
+  @media (max-width: 600px){
+    .wrap{padding:16px 14px 40px;}
+    .head{align-items:flex-start;}
+    .head h1{font-size:26px;}
+    .addbtn{width:100%;padding:14px 22px;font-size:16px;}
+    .stats{grid-template-columns:1fr 1fr;}
+    .col{flex:0 0 82vw;}
+    .modal{padding:18px;max-height:92vh;overflow-y:auto;}
+    .two-col{grid-template-columns:1fr;gap:0;}
+    .field{margin-bottom:14px;}
+    .field input,.field select,.field textarea{padding:12px 10px;font-size:16px;}
+    .modal-actions{flex-direction:column-reverse;align-items:stretch;}
+    .modal-actions > div{margin-left:0;flex-direction:column-reverse;}
+    .btn{padding:14px 18px;font-size:14px;}
+    .close-x{font-size:26px;top:14px;right:14px;padding:4px 8px;}
+    .photo-grid{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));}
+    .note-add-row{flex-direction:column;}
+    .note-add-row .btn{width:100%;}
+  }
 </style>
 </head>
 <body>
