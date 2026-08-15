@@ -230,6 +230,10 @@
       </div>
     </div>
     <div class="field">
+      <label>Client email</label>
+      <input type="email" id="f_email" placeholder="jordan@email.com">
+    </div>
+    <div class="field">
       <label>Notes</label>
       <div class="notes-log" id="notesLog"></div>
       <div class="note-add-row">
@@ -245,6 +249,13 @@
         <input type="file" id="f_photos" accept="image/*" multiple capture="environment">
       </label>
       <div class="photo-grid" id="photoGrid"></div>
+    </div>
+    <div class="field" id="sendEstimateSection" style="display:none;">
+      <label>Estimate delivery</label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-ghost" id="sendEstimateBtn">✉ Send estimate to client</button>
+        <span id="estimateSentLabel" style="font-size:11px;color:var(--ink-soft);"></span>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="deleteBtn" style="display:none;">Delete job</button>
@@ -315,7 +326,9 @@ function fromRow(row){
     photos: row.photos || [],
     hourly: row.hourly_rate,
     hours: row.hours_est,
-    notes_log: row.notes_log || []
+    notes_log: row.notes_log || [],
+    email: row.customer_email,
+    estimateSentAt: row.estimate_sent_at
   };
 }
 
@@ -336,7 +349,8 @@ function toRow(job){
     photos: job.photos || [],
     hourly_rate: job.hourly === '' || job.hourly == null ? 0 : Number(job.hourly),
     hours_est: job.hours === '' || job.hours == null ? 0 : Number(job.hours),
-    notes_log: job.notes_log || []
+    notes_log: job.notes_log || [],
+    customer_email: job.email || null
   };
 }
 
@@ -471,7 +485,12 @@ function openModal(id){
   document.getElementById('f_phone').value = job ? job.phone || '' : '';
   document.getElementById('f_hourly').value = job ? (job.hourly || '') : '';
   document.getElementById('f_hours').value = job ? (job.hours || '') : '';
+  document.getElementById('f_email').value = job ? job.email || '' : '';
   document.getElementById('deleteBtn').style.display = job ? 'inline-block' : 'none';
+  document.getElementById('sendEstimateSection').style.display = job ? 'block' : 'none';
+  document.getElementById('estimateSentLabel').textContent = (job && job.estimateSentAt)
+    ? 'Last sent ' + new Date(job.estimateSentAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+    : '';
   existingPhotos = job ? (job.photos || []).slice() : [];
   pendingFiles = [];
   notesLog = job ? (job.notes_log || []).slice() : [];
@@ -567,7 +586,8 @@ async function saveJob(){
     phone: document.getElementById('f_phone').value.trim(),
     hourly: document.getElementById('f_hourly').value,
     hours: document.getElementById('f_hours').value,
-    notes_log: notesLog
+    notes_log: notesLog,
+    email: document.getElementById('f_email').value.trim()
   };
 
   const jobNum = editingId ? (jobs.find(j => j.id === editingId) || {}).num : nextTicketNum();
@@ -620,6 +640,49 @@ document.getElementById('closeModal').addEventListener('click', closeModal);
 document.getElementById('cancelBtn').addEventListener('click', closeModal);
 document.getElementById('saveBtn').addEventListener('click', saveJob);
 document.getElementById('deleteBtn').addEventListener('click', deleteJob);
+document.getElementById('sendEstimateBtn').addEventListener('click', async () => {
+  const email = document.getElementById('f_email').value.trim();
+  if(!email){ setStatus('Add a client email first', true); return; }
+  if(!editingId){ setStatus('Save the job before sending an estimate', true); return; }
+
+  const btn = document.getElementById('sendEstimateBtn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  setStatus('Sending estimate…');
+
+  const job = jobs.find(j => j.id === editingId) || {};
+
+  try{
+    const res = await fetch('/api/send-estimate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        to: email,
+        clientName: document.getElementById('f_client').value.trim(),
+        ticketNo: ticketNo(job.num),
+        jobType: document.getElementById('f_type').value,
+        addr: document.getElementById('f_addr').value.trim(),
+        value: document.getElementById('f_value').value,
+        materials: document.getElementById('f_materials').value,
+        labor: document.getElementById('f_labor').value
+      })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Send failed');
+
+    const sentAt = new Date().toISOString();
+    await sb.from('jobs').update({estimate_sent_at: sentAt, customer_email: email}).eq('id', editingId);
+    document.getElementById('estimateSentLabel').textContent = 'Last sent ' + new Date(sentAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    setStatus('Estimate sent to ' + email);
+    await loadJobs();
+  }catch(err){
+    setStatus('Send failed: ' + err.message, true);
+  }
+
+  btn.disabled = false;
+  btn.textContent = originalLabel;
+});
 document.getElementById('f_type').addEventListener('change', updateHourlyVisibility);
 document.getElementById('addNoteBtn').addEventListener('click', () => {
   const input = document.getElementById('f_note_new');
