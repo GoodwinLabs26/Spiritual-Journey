@@ -665,7 +665,9 @@ document.getElementById('sendEstimateBtn').addEventListener('click', async () =>
         addr: document.getElementById('f_addr').value.trim(),
         value: document.getElementById('f_value').value,
         materials: document.getElementById('f_materials').value,
-        labor: document.getElementById('f_labor').value
+        labor: document.getElementById('f_labor').value,
+        hourly: document.getElementById('f_hourly').value,
+        hours: document.getElementById('f_hours').value
       })
     });
     const data = await res.json();

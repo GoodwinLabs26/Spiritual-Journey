@@ -5,8 +5,13 @@ function fmtMoney(n){
   return '$' + n.toLocaleString('en-US', {maximumFractionDigits: 0});
 }
 
-function buildHtml({clientName, ticketNo, jobType, addr, value, materials, labor}){
-  const total = fmtMoney(value);
+function buildHtml({clientName, ticketNo, jobType, addr, value, materials, labor, hourly, hours}){
+  const isHourly = jobType === 'Snow Removal' && Number(hourly) > 0;
+  const total = isHourly ? fmtMoney(Number(hourly) * Number(hours || 0)) : fmtMoney(value);
+  const priceRow = isHourly
+    ? `<tr><td style="padding:10px 14px;font-size:11px;color:#6B6A63;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #D8D2C2;">Rate</td>
+           <td style="padding:10px 14px;font-size:13px;text-align:right;border-bottom:1px solid #D8D2C2;">${fmtMoney(hourly)}/hr &times; ${Number(hours || 0)} est. hrs</td></tr>`
+    : '';
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
@@ -33,6 +38,7 @@ function buildHtml({clientName, ticketNo, jobType, addr, value, materials, labor
                     <td style="padding:10px 14px;font-size:13px;text-align:right;border-bottom:1px solid #D8D2C2;">${jobType || ''}</td></tr>
                 <tr><td style="padding:10px 14px;font-size:11px;color:#6B6A63;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #D8D2C2;">Address</td>
                     <td style="padding:10px 14px;font-size:13px;text-align:right;border-bottom:1px solid #D8D2C2;">${addr || ''}</td></tr>
+                ${priceRow}
                 <tr><td style="padding:12px 14px;font-size:13px;font-weight:700;">Total estimate</td>
                     <td style="padding:12px 14px;font-size:16px;font-weight:700;text-align:right;font-family:monospace;">${total}</td></tr>
               </table>
@@ -55,7 +61,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const {to, clientName, ticketNo, jobType, addr, value, materials, labor} = req.body || {};
+  const {to, clientName, ticketNo, jobType, addr, value, materials, labor, hourly, hours} = req.body || {};
 
   const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || '').trim());
   if(!isValidEmail(to)){
@@ -81,7 +87,7 @@ module.exports = async (req, res) => {
       from: `"Spiritual Journey" <${gmailUser}>`,
       to,
       subject: `Your estimate from Spiritual Journey${ticketNo ? ' — ' + ticketNo : ''}`,
-      html: buildHtml({clientName, ticketNo, jobType, addr, value, materials, labor})
+      html: buildHtml({clientName, ticketNo, jobType, addr, value, materials, labor, hourly, hours})
     });
     res.status(200).json({success: true});
   }catch(err){
